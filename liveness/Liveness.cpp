@@ -30,8 +30,22 @@ class Liveness : public ModulePass {
 		bool runOnModule(Module &M);
 		void computeLiveness(Function &F);
 		void print_sets(const std::map<StringRef,BlockData> &);
+		void print_in_out(const BlockData &, const StringRef);
 };
 
+
+void Liveness::print_in_out(const BlockData &bd, const StringRef name) {
+	outs() << "\n---------" << name << "-----------\n";
+	outs() << "\nIN\n";
+	for (std::set<StringRef>::const_iterator b=bd.in.begin(), e=bd.in.end(); b!=e; ++b) {
+		outs() << *b << ", ";
+	}
+	outs() << "\n\nOUT\n";
+	for (std::set<StringRef>::const_iterator b=bd.out.begin(), e=bd.out.end(); b!=e; ++b) {
+		outs() << *b << ", ";
+	}
+	outs() << "\n************************\n";
+}
 
 void Liveness::print_sets(const std::map<StringRef,BlockData> &map) {
 	std::map<StringRef,BlockData>::const_iterator it = map.begin(), end = map.end();
@@ -158,8 +172,12 @@ void Liveness::computeLiveness(Function &F) {
 		// outs() << block_data.in.size() << "\n";
 		if (block_data.in.size() > in_size) {
 			// outs() << "inside\n";
-			worklist.push_back(&basic_block);
+			for (pred_iterator PI=pred_begin(&basic_block), E=pred_end(&basic_block); PI != E; ++PI) {
+				worklist.push_back(dyn_cast<BasicBlock>(*PI));
+			}
+			// worklist.push_back(&basic_block);
 		}
+		// print_in_out(block_data, basic_block.getName());
 	} while (!worklist.empty());
 
 	// outs() << "\n\nafter algo\n\n";
