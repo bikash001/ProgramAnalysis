@@ -29,15 +29,15 @@ class Liveness : public ModulePass {
 
 		bool runOnModule(Module &M);
 		void computeLiveness(Function &F);
-		void print_sets(const BlockData &bd);
+		void print_sets(const std::map<StringRef,BlockData> &);
 };
 
 
-void Liveness::print_sets(const BlockData &bd){ //(std::map<StringRef,BlockData> &map) {
-	// std::map<StringRef,BlockData>::const_iterator it = map.begin(), end = map.end();
-	// for (; it != end; ++it) {
-	// 	outs() << "---------" << it->first << "-----------\n";
-		// const BlockData &bd = it->second;
+void Liveness::print_sets(const std::map<StringRef,BlockData> &map) {
+	std::map<StringRef,BlockData>::const_iterator it = map.begin(), end = map.end();
+	for (; it != end; ++it) {
+		outs() << "---------" << it->first << "-----------\n";
+		const BlockData &bd = it->second;
 		outs() << "USE\n";
 		for (std::set<StringRef>::const_iterator b=bd.use.begin(), e=bd.use.end(); b!=e; ++b) {
 			outs() << *b << ", ";
@@ -55,7 +55,7 @@ void Liveness::print_sets(const BlockData &bd){ //(std::map<StringRef,BlockData>
 			outs() << *b << ", ";
 		}
 		outs() << "\nxxxxxxxxxxxxxxxxxxxxxxxxxxx\n";
-	// }
+	}
 }
 
 bool Liveness::runOnModule(Module &M) {
@@ -132,6 +132,9 @@ void Liveness::computeLiveness(Function &F) {
 		// std::map<Value*, 
 	}
 
+	// outs() << "initialization\n\n";
+	// print_sets(bblocks);
+	
 	unsigned int in_size = 0;
 	std::set<StringRef> *setptr;
 	do {
@@ -159,6 +162,7 @@ void Liveness::computeLiveness(Function &F) {
 		}
 	} while (!worklist.empty());
 
+	// outs() << "\n\nafter algo\n\n";
 	// print_sets(bblocks);
 
 	if (print_block == NULL) {
@@ -167,8 +171,9 @@ void Liveness::computeLiveness(Function &F) {
 	}
 
 	BlockData &print_block_data = bblocks.at(print_block->getName());
-	std::set<StringRef> live_at_print(print_block_data.out.begin(), print_block_data.out.end());
-	std::set<StringRef> def, use;
+	// std::set<StringRef> live_at_print(print_block_data.out.begin(), print_block_data.out.end());
+	std::set<StringRef> live_at_print;
+	std::set<StringRef> def;
 	std::map<Value*, std::set<StringRef> > track_data;
 	bool after_call = false;
 
@@ -185,6 +190,10 @@ void Liveness::computeLiveness(Function &F) {
 								if (it != track_data.end()) {
 									track_data.erase(it);
 								}
+								// std::set<StringRef>::iterator elem = live_at_print.find(val->getName());
+								// if (elem != live_at_print.end()) {
+								// 	live_at_print.erase(elem);
+								// }
 							}
 						}
 						break;
@@ -248,6 +257,12 @@ void Liveness::computeLiveness(Function &F) {
 						break;
 					}
 			}
+	}
+
+	for (std::set<StringRef>::iterator begin=print_block_data.out.begin(), end=print_block_data.out.end(); begin!=end; ++begin) {
+		if (def.find(*begin) == def.end()) {
+			live_at_print.insert(*begin);
+		}
 	}
 
 	for (std::set<StringRef>::iterator b=live_at_print.begin(), e=live_at_print.end(); b != e; ++b) {
