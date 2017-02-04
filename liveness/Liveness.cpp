@@ -3,8 +3,12 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/Argument.h"
+#include "llvm/IR/BasicBlock.h"
 #include <set>
 #include <string>
+#include <map>
+#include <queue>
+#include "llvm/IR/CFG.h"
 
 using namespace llvm;
 
@@ -16,12 +20,19 @@ class Liveness : public ModulePass {
 
 		bool runOnModule(Module &M);
 		void computeLiveness(Function &F);
-	private:
-		std::set<std::string> vars;
-		std::set<std::string> use;
-		std::set<std::string> def;
+	// private:
+	// 	// std::set<std::string> vars;
+	// 	std::map<std::string,BlockData> bblocks;
 };
 
+class BlockData
+{
+public:
+	std::set<std::string> use, def, in, out;
+	BlockData() {}
+	~BlockData() {}
+	
+};
 
 bool Liveness::runOnModule(Module &M) {
 	for (Module::iterator F = M.begin(), E = M.end(); F != E; ++F) {
@@ -33,51 +44,16 @@ bool Liveness::runOnModule(Module &M) {
 }
 
 void Liveness::computeLiveness(Function &F) {
-	vars.clear();
-	for (Function::arg_iterator beg = F.arg_begin(), end = F.arg_end(); beg != end; ++beg) {
-		if (beg->hasName()) {
-			vars.insert(beg->getName());
-		}
-	}
-	// int count = 0;
-	// Value *old = NULL;
-	// int prev = 0;
+	std::map<std::string,BlockData> bblocks;
+	std::deque<BasicBlock*> worklist;
+
 	for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
-		def.clear();
-		use.clear();
-		outs() << BB->getName() << ":\n";
+		worklist.push_back(dyn_cast<BasicBlock>(BB));
+		BlockData temp;
+		bblocks.insert(std::pair<std::string,BlockData>(BB->getName(),temp));
+		std::set<std::string> &def = temp.def;
+		std::set<std::string> &use = temp.use;
 		for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
-			// outs() << "inst:" << ++count << " ";
-			// for (Instruction::value_op_iterator it=I->value_op_begin(), end=I->value_op_end(); it != end; ++it) {
-			// 	if (it->hasName()) {
-					
-			// 	} else {
-			// 		outs() << " false | ";
-			// 	}
-			// 	it->printAsOperand(outs()); outs() << " | ";
-			// 	outs() << it->getName() << " | ";
-			// 	it->print(outs());
-			// 	outs() << " ";
-			// 	vars.insert(it->getName());
-			// }
-			
-			// if (I->getNumOperands() == 3 && prev == 2) {
-			// 	outs() << "----"<< old->getName() << "---\n";
-			// 	for (Instruction::value_op_iterator it=I->value_op_begin(), end=I->value_op_end(); it != end; ++it) {
-			// 		if (it->hasName()) {
-			// 			outs() << it->getName() << "->";
-			// 			if ( old && dyn_cast<Value>(*it) == old) {
-			// 				outs() << "yes, ";
-			// 			} else {
-			// 				outs() << "no, ";
-			// 			}
-			// 		}
-			// 	}
-			// 	outs() << "\n------------\n";
-			// }
-			// prev = I->getNumOperands();
-			// old = dyn_cast<Value>(I);
-			// outs() << I->getName() << "\n";
 			
 			switch (I->getOpcode()) {
 				case Instruction::Store:
@@ -94,31 +70,48 @@ void Liveness::computeLiveness(Function &F) {
 					{
 						Value *val = dyn_cast<Value>(I->getOperand(0));
 						if (val->hasName()) {
-							use.insert(val->getName());
+							std::string str = val->getName();
+							if (def.find(str) == def.end())
+								use.insert(str);
 						}
 						// LoadInst *LI = dyn_cast<LoadInst>(I);
 						// LI->print(outs()); outs() << "\n";
 						break;
 					}
-				case Instruction::Alloca:
-					{
-						// if (I->hasName())
-						// 	vals.insert(I->name());
-						// outs() << I->getName() << ", " << I->getNumOperands() << "\n";
+				default:
 						break;
-					}
+			}
+			temp.in.insert(use.begin(),use.end());
+		}
+	}
+
+	unsigned int in_size = 0;
+	std::string child;
+	std::set<std::string> *setptr;
+	do {
+		BasicBlock &basic_block = *(worklist.front());
+		worklist.pop_front();
+		BlockData &block_data = bblocks[basic_block.getName()];
+		in_size = block_data.in.size();
+		for (succ_iterator SI = succ_begin(&basic_block), E = succ_end(&basic_block); SI != E; ++SI) {
+			setptr = &(bblocks[SI->getName()].in);
+			block_data.out.insert(setptr->begin(),setptr->end());
+		}
+		block_data.in.insert(block_data.use.begin(), block_data.use.end());
+		for (std::set<std::string>::iterator begin=block_data.out.begin(), end=block_data.out.end(); begin!=end; ++begin) {
+			if (block_data.def.find(*begin) == block_data.def.end()) {
+				block_data.in.insert(*begin);
 			}
 		}
-		outs() << "def-----\n";
-		for (std::set<std::string>::iterator b=def.begin(), e=def.end(); b != e; ++b) {
-			outs() << *b << ", ";
+		if (block_data.in.size() > in_size) {
+			worklist.push_back(&basic_block);
 		}
-		outs() << "\nuse-------\n";
-		for (std::set<std::string>::iterator b=use.begin(), e=use.end(); b != e; ++b) {
-			outs() << *b << ", ";
-		}
-		outs() << "\n\n";
-	}
+	} while (!worklist.empty());
+
+	// for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
+		
+	// }
+	
 	// std::set<std::string>::iterator b, e;
 	// for (b=vars.begin(), e=vars.end(); b != e; ++b) {
 	// 	outs() << *b << " ";
