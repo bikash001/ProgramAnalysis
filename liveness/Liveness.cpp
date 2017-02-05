@@ -5,7 +5,6 @@
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/BasicBlock.h"
 #include <set>
-#include <string>
 #include <map>
 #include <queue>
 #include "llvm/IR/CFG.h"
@@ -29,6 +28,7 @@ class Liveness : public ModulePass {
 
 		bool runOnModule(Module &M);
 		void computeLiveness(Function &F);
+	private:
 		void print_sets(const std::map<StringRef,BlockData> &);
 		void print_in_out(const BlockData &, const StringRef);
 };
@@ -87,7 +87,6 @@ void Liveness::computeLiveness(Function &F) {
 	BasicBlock *print_block = NULL;
 
 	for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
-		// outs() << "basicblock: " << BB->getName() << "\n";
 		worklist.push_back(dyn_cast<BasicBlock>(BB));
 		BlockData temp;
 		std::set<StringRef> &def = temp.def;
@@ -101,10 +100,7 @@ void Liveness::computeLiveness(Function &F) {
 						Value *val = dyn_cast<Value>(I->getOperand(1));
 						if (val->hasName()) {
 							def.insert(val->getName());
-							// outs() << "def: " << val->getName() << "\n";
 						}
-						// StoreInst *SI = dyn_cast<StoreInst>(I);
-						// SI->print(outs()); outs() << "\n";
 						break;
 					}
 				case Instruction::Load:
@@ -114,21 +110,18 @@ void Liveness::computeLiveness(Function &F) {
 							StringRef str = val->getName();
 							if (def.find(str) == def.end()) {
 								use.insert(str);
-								// outs() << "use: " << val->getName() << "\n";
 							}
 						}
-						// LoadInst *LI = dyn_cast<LoadInst>(I);
-						// LI->print(outs()); outs() << "\n";
 						break;
 					}
 				case Instruction::Call:
 					{
 						CallInst *CI = dyn_cast<CallInst>(I);
 						Function *f = CI->getCalledFunction();
-						std::string fname = f->getName();
-						// outs() << fname << " fnc\n";
-						if (f != NULL && fname.compare("printf") == 0) {
-							// outs() << "\ninside printf\n";
+						// std::string fname = f->getName();
+						StringRef fname = "printf";
+						// if (f != NULL && fname.compare("printf") == 0) {
+						if (f != NULL && fname.equals(f->getName())) {
 							print_block = dyn_cast<BasicBlock>(BB);
 						}
 						break;
@@ -137,13 +130,8 @@ void Liveness::computeLiveness(Function &F) {
 						break;
 			}
 		}
-		// outs() << "def size: " << temp.def.size() << "\n";
 		temp.in.insert(use.begin(),use.end());
 		bblocks.insert(std::pair<StringRef,BlockData>(BB->getName(),temp));
-		// outs() << "in def size: " << bblocks.at(BB->getName()).def.size() << "\n";
-		// print_sets(bblocks.at(BB->getName()));
-		// outs() << temp.in.size() << ", " << temp.def.size() << ", " << temp.use.size() << "\n";
-		// std::map<Value*, 
 	}
 
 	// outs() << "initialization\n\n";
@@ -156,28 +144,21 @@ void Liveness::computeLiveness(Function &F) {
 		worklist.pop_front();
 		BlockData &block_data = bblocks.at(basic_block.getName());
 		in_size = block_data.in.size();
-		// int count = 0;
 		for (succ_iterator SI = succ_begin(&basic_block), E = succ_end(&basic_block); SI != E; ++SI) {
-			// count++;
 			setptr = &(bblocks.at(SI->getName()).in);
 			block_data.out.insert(setptr->begin(),setptr->end());
 		}
-		// outs() << count << ", " << in_size << "\n";
 		block_data.in.insert(block_data.use.begin(), block_data.use.end());
 		for (std::set<StringRef>::iterator begin=block_data.out.begin(), end=block_data.out.end(); begin!=end; ++begin) {
 			if (block_data.def.find(*begin) == block_data.def.end()) {
 				block_data.in.insert(*begin);
 			}
 		}
-		// outs() << block_data.in.size() << "\n";
 		if (block_data.in.size() > in_size) {
-			// outs() << "inside\n";
 			for (pred_iterator PI=pred_begin(&basic_block), E=pred_end(&basic_block); PI != E; ++PI) {
 				worklist.push_back(dyn_cast<BasicBlock>(*PI));
 			}
-			// worklist.push_back(&basic_block);
 		}
-		// print_in_out(block_data, basic_block.getName());
 	} while (!worklist.empty());
 
 	// outs() << "\n\nafter algo\n\n";
@@ -189,7 +170,6 @@ void Liveness::computeLiveness(Function &F) {
 	}
 
 	BlockData &print_block_data = bblocks.at(print_block->getName());
-	// std::set<StringRef> live_at_print(print_block_data.out.begin(), print_block_data.out.end());
 	std::set<StringRef> live_at_print;
 	std::set<StringRef> def;
 	std::map<Value*, std::set<StringRef> > track_data;
@@ -208,10 +188,6 @@ void Liveness::computeLiveness(Function &F) {
 								if (it != track_data.end()) {
 									track_data.erase(it);
 								}
-								// std::set<StringRef>::iterator elem = live_at_print.find(val->getName());
-								// if (elem != live_at_print.end()) {
-								// 	live_at_print.erase(elem);
-								// }
 							}
 						}
 						break;
@@ -243,8 +219,11 @@ void Liveness::computeLiveness(Function &F) {
 						if (!after_call) {
 							CallInst *CI = dyn_cast<CallInst>(I);
 							Function *f = CI->getCalledFunction();
-							std::string fname = f->getName();
-							if (f != NULL && fname.compare("printf") == 0) {
+							// std::string fname = f->getName();
+							// if (f != NULL && fname.compare("printf") == 0) {
+							StringRef fname = "printf";
+							// if (f != NULL && fname.compare("printf") == 0) {
+							if (f != NULL && fname.equals(f->getName())) {
 								after_call = true;
 								std::map<Value*, std::set<StringRef> >::iterator itr;
 								for (Instruction::op_iterator it=CI->arg_begin(), end=CI->arg_end(); it != end; ++it) {
