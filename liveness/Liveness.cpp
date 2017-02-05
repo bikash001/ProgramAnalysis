@@ -263,7 +263,11 @@ void Liveness::computeLiveness(Function &F) {
 	}
 
 	for (std::set<StringRef>::iterator b=live_at_print.begin(), e=live_at_print.end(); b != e; ++b) {
-		outs() << *b << " ";
+		if (b->endswith(".addr")) {
+			outs() << b->drop_back(5) << " ";
+		} else {
+			outs() << *b << " ";
+		}
 	}
 	outs()<< "\n";
 }
