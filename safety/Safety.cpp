@@ -16,7 +16,7 @@ using namespace llvm;
 class BlockData
 {
 public:
-	std::map<StringRef,std::set<StringRef> > gen, in, out;
+	std::set<StringRef> gen, in, out;
 	BlockData() {}
 	~BlockData() {}
 	
@@ -45,7 +45,7 @@ void Safety::computeSafety(Function &F) {
 	std::map<StringRef,BlockData> bblocks;
 	std::deque<BasicBlock*> worklist;
 	BasicBlock *print_block = NULL;
-	std::map<StringRef,std::set<StringRef> >::iterator itr, itrTop;
+	std::set<StringRef>::iterator itr, itrTop;
 
 	for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
 		worklist.push_back(dyn_cast<BasicBlock>(BB));
@@ -170,14 +170,14 @@ void Safety::computeSafety(Function &F) {
 		bblocks.insert(std::pair<StringRef,BlockData>(BB->getName(),temp));
 	}
 
-	unsigned int in_size = 0;
-	std::map<StringRef,std::set<StringRef> > *mapptr;
+	unsigned int out_size = 0;
+	std::set<StringRef> *setptr, *dataptr;
 	do {
 		BasicBlock &basic_block = *(worklist.front());
 		worklist.pop_front();
 		
 		BlockData &block_data = bblocks.at(basic_block.getName());
-		std::map<StringRef,std::set<StringRef> > &gen = block_data.gen;
+		std::set<StringRef> &gen = block_data.gen;
 		Value *prev = NULL;
 
 		for (BasicBlock::iterator I = basic_block.begin(), E = basic_block.end(); I != E; ++I) {
@@ -194,29 +194,14 @@ void Safety::computeSafety(Function &F) {
 								gen.erase(name);
 							} else if (prev != NULL) {	// ptr = ptr2
 								StringRef pName = prev->getName();
-								if (itrTop == gen.end()) {	//not exist earlier
-									itr = gen.find(pName);
-									if (itr != gen.end()) {	//if ptr2 data exist
-										std::set<StringRef> mset(itr->second);
-										gen.insert(std::pair<StringRef,std::set<StringRef> >(name, mset));
-									}
-								} else {
-									std::set<StringRef> &mset = itrTop->second;
-									mset.clear();
-									itr = gen.find(pName);
-									if (itr != gen.end()) {	//if ptr2 exist
-										mset.insert(itr->second.begin(), itr->second.end());
-									} else {	//ptr2 not exist so delete data
-										gen.erase(name);
-									}
+								if (itrTop == gen.end() && gen.find(pName) != gen.end()) {	//not exist earlier
+									gen.insert(name);
+								} else if (gen.find(pName) == gen.end()) {	//if ptr2 not exist
+									gen.erase(name);
 								}
 							} else {	// ptr = &x
 								if (itrTop == gen.end()) {		//if ptr not present in gen, then null ptr
-									std::set<StringRef> mset;	//if set empty, then malloc data
-									gen.insert(std::pair<StringRef,std::set<StringRef> >(name, mset));
-								} else {
-									std::set<StringRef> &mset = itrTop->second;
-									mset.clear();
+									gen.insert(name);
 								}
 							}
 						}
@@ -237,8 +222,8 @@ void Safety::computeSafety(Function &F) {
 						Function *f = CI->getCalledFunction();
 						StringRef fname = "printf";
 						if (f != NULL && fname.equals(f->getName())) {
-							print_block = dyn_cast<BasicBlock>(BB);
-						}
+							print_block = &basic_block;
+						} 
 						prev = NULL;
 						break;
 					}
@@ -249,24 +234,75 @@ void Safety::computeSafety(Function &F) {
 		}
 
 		out_size = block_data.out.size();
-		for (pred_iterator PI = pred_begin(&basic_block), E = pred_end(&basic_block); PI != E; ++PI) {
-			mapptr = &(bblocks.at(PI->getName()).out);
-			block_data.out.insert(setptr->begin(),setptr->end());
-		}
-		block_data.in.insert(block_data.use.begin(), block_data.use.end());
-		for (std::set<StringRef>::iterator begin=block_data.out.begin(), end=block_data.out.end(); begin!=end; ++begin) {
-			if (block_data.def.find(*begin) == block_data.def.end()) {
-				block_data.in.insert(*begin);
+		pred_iterator PI = pred_begin(&basic_block), PE = pred_end(&basic_block);
+		if (PE != PI) {
+			BlockData &bdata = bblocks.at((*PI)->getName());
+			setptr = &(bdata.out);
+			block_data.in.clear();
+			block_data.in.insert(setptr->begin(), setptr->end());
+			++PI;
+
+			for (; PI != PE; ++PI) {
+				setptr = &(bblocks.at((*PI)->getName()).out);
+				dataptr = &(block_data.in);
+				for (itrTop = dataptr->begin(), itr = dataptr->end(); itrTop != itr; ++itrTop) {
+					if (setptr->find(*itrTop) == setptr->end()) {
+						dataptr->erase(*itrTop);
+					}
+				}
 			}
 		}
-		if (block_data.in.size() > out_size) {
-			for (pred_iterator PI=pred_begin(&basic_block), E=pred_end(&basic_block); PI != E; ++PI) {
-				worklist.push_back(dyn_cast<BasicBlock>(*PI));
+		block_data.out.insert(block_data.in.begin(),block_data.in.end());
+		block_data.out.insert(block_data.gen.begin(), block_data.gen.end());
+		
+		if (block_data.out.size() != out_size) {
+			for (succ_iterator SI=succ_begin(&basic_block), E=succ_end(&basic_block); SI != E; ++SI) {
+				worklist.push_back(dyn_cast<BasicBlock>(*SI));
 			}
 		}
 	} while (!worklist.empty());
 	
-	// outs()<< "\n";
+	std::map<Value*, StringRef> argData;
+	Value *prev = NULL;
+
+	std::set<StringRef> &out = bblocks.at(print_block->getName()).out;
+	for (BasicBlock::iterator I = print_block->begin(), E = print_block->end(); I != E; ++I) {
+			
+		switch (I->getOpcode()) {
+			case Instruction::Load:
+				{
+					Value *val = dyn_cast<Value>(I->getOperand(0));
+					if (val->hasName()) {
+						prev = dyn_cast<Value>(I);
+						argData.insert(std::pair<Value*, StringRef>(dyn_cast<Value>(I),val->getName()));
+					} else if (val == prev) {
+						argData.insert(std::pair<Value*, StringRef>(dyn_cast<Value>(I),argData.at(prev)));
+					}
+					break;
+				}
+			case Instruction::Call:
+				{
+					CallInst *CI = dyn_cast<CallInst>(I);
+					Function *f = CI->getCalledFunction();
+					StringRef fname = "printf";
+					if (f != NULL && fname.equals(f->getName())) {
+						Instruction::op_iterator it=CI->arg_begin(), end=CI->arg_end();
+						for (++it; it != end; ++it) {
+							StringRef str = argData.at(dyn_cast<Value>(it));
+							if (out.find(str) != out.end()) {
+								outs() << "safe ";
+							} else {
+								outs() << "unsafe ";
+							}
+						}
+					}
+					break;
+				}
+			default:
+					break;
+		}
+	}
+	outs()<< "\n";
 }
 
 
