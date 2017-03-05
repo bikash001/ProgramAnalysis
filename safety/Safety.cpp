@@ -179,7 +179,6 @@ void Safety::computeFunction(std::set<std::string> &locals, std::set<std::string
 	}
 	
 	for (itrTop=fglobals.begin(), itr=fglobals.end(); itrTop != itr; ++itrTop) {
-		// outs() << "l 195\n";
 		if (globalsadd.find(*itrTop) == globalsadd.end()) {
 			globalsrem.insert(itrTop->str());
 		}
@@ -295,17 +294,6 @@ void Safety::computeSafety(Function &F) {
 
 							computeFunction(locals, globalsadd, globalsrem, *f);
 							
-							// arg_bg = f->arg_begin();
-
-							// for (Instruction::op_iterator it=CI->arg_begin(), end=CI->arg_end(); it != end; ++it, ++arg_bg) {
-							// 	std::string strref = arg_bg->getName().str() + ".addr";
-								
-							// 	if (locals.find(strref) == locals.end()) {
-							// 		gen.erase(argVals.at(*it));
-							// 	} else {
-							// 		gen.insert(argVals.at(*it));
-							// 	}
-							// }
 							gen.insert(globalsadd.begin(), globalsadd.end());							
 							for (std::set<std::string>::iterator jj=globalsrem.begin(), kk=globalsrem.end(); jj != kk; ++jj) {
 								StringRef str = *jj;
