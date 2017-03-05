@@ -31,7 +31,7 @@ class Safety : public ModulePass {
 		bool runOnModule(Module &M);
 		void computeSafety(Function &F);
 	private:
-		void computeFunction(std::set<StringRef> &, std::set<StringRef> &, std::set<StringRef> &, Function &);
+		void computeFunction(std::set<std::string> &, std::set<std::string> &, std::set<std::string> &, Function &);
 };
 
 bool Safety::runOnModule(Module &M) {
@@ -46,7 +46,7 @@ bool Safety::runOnModule(Module &M) {
 	return false;
 }
 
-void Safety::computeFunction(std::set<StringRef> &locals, std::set<StringRef> &globalsadd, std::set<StringRef> &globalsrem, Function &F) {
+void Safety::computeFunction(std::set<std::string> &locals, std::set<std::string> &globalsadd, std::set<std::string> &globalsrem, Function &F) {
 	
 	// for (Function::arg_iterator it=F.arg_begin(), end=F.arg_end(); it != end; ++it) {
 	// 	if (it->hasName()) {
@@ -57,19 +57,19 @@ void Safety::computeFunction(std::set<StringRef> &locals, std::set<StringRef> &g
 	// }
 	// outs() << "\n";
 	// exit(0);
-	outs() << "function begin\n";
+	// outs() << "function begin\n";
 	std::map<StringRef,BlockData> bblocks;
 	std::deque<BasicBlock*> worklist;
 	std::set<StringRef>::iterator itr, itrTop;
 	std::set<StringRef> flocals, fglobals;
 
 	for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
-		outs() << "l 67\n";
+		// outs() << "l 67\n";
 		worklist.push_back(dyn_cast<BasicBlock>(BB));
 		BlockData temp;
 		bblocks.insert(std::pair<StringRef,BlockData>(BB->getName(),temp));
 		for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
-			outs() << "l 72\n";
+			// outs() << "l 72\n";
 			switch (I->getOpcode()) {
 				case Instruction::Alloca:
 					{
@@ -95,9 +95,8 @@ void Safety::computeFunction(std::set<StringRef> &locals, std::set<StringRef> &g
 	BasicBlock &last_block = *(worklist.back());
 	unsigned int out_size = 0;
 	std::set<StringRef> *setptr, *dataptr;
-	int count = 0;
 	do {
-		outs() << "l 100\n";
+		// outs() << "l 100\n";
 		BasicBlock &basic_block = *(worklist.front());
 		worklist.pop_front();
 		
@@ -106,7 +105,7 @@ void Safety::computeFunction(std::set<StringRef> &locals, std::set<StringRef> &g
 		Value *prev = NULL;
 
 		for (BasicBlock::iterator I = basic_block.begin(), E = basic_block.end(); I != E; ++I) {
-			outs() << "l 109\n";
+			// outs() << "l 109\n";
 			switch (I->getOpcode()) {
 				case Instruction::Store:
 					{
@@ -157,7 +156,7 @@ void Safety::computeFunction(std::set<StringRef> &locals, std::set<StringRef> &g
 			++PI;
 
 			for (; PI != PE; ++PI) {
-				outs() << "l 160\n";
+				// outs() << "l 160\n";
 				setptr = &(bblocks.at((*PI)->getName()).out);
 				dataptr = &(block_data.in);
 				for (itrTop = dataptr->begin(), itr = dataptr->end(); itrTop != itr; ++itrTop) {
@@ -172,33 +171,32 @@ void Safety::computeFunction(std::set<StringRef> &locals, std::set<StringRef> &g
 		
 		if (block_data.out.size() != out_size) {
 			for (succ_iterator SI=succ_begin(&basic_block), E=succ_end(&basic_block); SI != E; ++SI) {
-				outs() << "l 175\n";
+				// outs() << "l 175\n";
 				worklist.push_back(dyn_cast<BasicBlock>(*SI));
 			}
 		}
-		// outs() << "loop ------ "<< ++count << "\n";
 
 	} while (!worklist.empty());
 
 	BlockData &bdata = bblocks.at(last_block.getName());
 	std::set<StringRef> &out = bdata.out;
 	for (itrTop=out.begin(), itr=out.end(); itrTop != itr; ++itrTop) {
-		outs() << "l 186\n";
+		// outs() << "l 186\n";
 		if (flocals.find(*itrTop) == flocals.end()) {
-			globalsadd.insert(*itrTop);
+			globalsadd.insert(itrTop->str());
 		} else {
-			locals.insert(*itrTop);
+			locals.insert(itrTop->str());
 		}
 	}
 	
 	for (itrTop=fglobals.begin(), itr=fglobals.end(); itrTop != itr; ++itrTop) {
-		outs() << "l 195\n";
+		// outs() << "l 195\n";
 		if (globalsadd.find(*itrTop) == globalsadd.end()) {
-			globalsrem.insert(*itrTop);
+			globalsrem.insert(itrTop->str());
 		}
 	}
-	outs() << "function end\n";
-	outs() << "size " << globalsadd.size() << ", " << globalsrem.size() << "\n";
+	// outs() << "function end\n";
+	// outs() << "size " << globalsadd.size() << ", " << globalsrem.size() << "\n";
 }
 
 void Safety::computeSafety(Function &F) {
@@ -210,14 +208,14 @@ void Safety::computeSafety(Function &F) {
 	for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
 		worklist.push_back(dyn_cast<BasicBlock>(BB));
 		BlockData temp;
-		outs() << "l 213\n";
+		// outs() << "l 213\n";
 		bblocks.insert(std::pair<StringRef,BlockData>(BB->getName(),temp));
 	}
 
 	unsigned int out_size = 0;
 	std::set<StringRef> *setptr, *dataptr;
 	do {
-		outs() << "l 220\n";
+		// outs() << "l 220\n";
 		BasicBlock &basic_block = *(worklist.front());
 		worklist.pop_front();
 		
@@ -228,7 +226,7 @@ void Safety::computeSafety(Function &F) {
 	
 		for (BasicBlock::iterator I = basic_block.begin(), E = basic_block.end(); I != E; ++I) {
 			
-			outs() << "l 231\n";
+			// outs() << "l 231\n";
 			switch (I->getOpcode()) {
 				case Instruction::Store:
 					{
@@ -281,17 +279,17 @@ void Safety::computeSafety(Function &F) {
 						if (f != NULL && fname.equals(f->getName())) {
 							print_block = &basic_block;
 						} else if (!f->isDeclaration()) {
-							std::set<StringRef> locals;
-							std::set<StringRef> globalsadd;
-							std::set<StringRef> globalsrem;
+							std::set<std::string> locals;
+							std::set<std::string> globalsadd;
+							std::set<std::string> globalsrem;
 
 							computeFunction(locals, globalsadd, globalsrem, *f);
 							
 							Function::arg_iterator arg_bg = f->arg_begin();
 
 							for (Instruction::op_iterator it=CI->arg_begin(), end=CI->arg_end(); it != end; ++it, ++arg_bg) {
-								outs() << "l 293\n";
-								StringRef strref = arg_bg->getName().str() + ".addr";
+								// outs() << "l 293\n";
+								std::string strref = arg_bg->getName().str() + ".addr";
 								// outs() << "--> "<< strref << "\n";
 								
 								if (locals.find(strref) == locals.end()) {
@@ -301,15 +299,19 @@ void Safety::computeSafety(Function &F) {
 								}
 							}
 							// outs() << " inside for loop end\n";
-							// gen.insert(globalsadd.begin(), globalsadd.end());							
+							gen.insert(globalsadd.begin(), globalsadd.end());							
 							// outs() << "first end\n";
+							for (std::set<std::string>::iterator jj=globalsrem.begin(), kk=globalsrem.end(); jj != kk; ++jj) {
+								StringRef str = *jj;
+								gen.erase(str);
+							}
 							// gen.erase(globalsrem.begin(), globalsrem.end());							
 							// outs() << "second end\n";
-							locals.clear();
+							// locals.clear();
 							// outs() << "local cler\n";
-							globalsrem.clear();
+							// globalsrem.clear();
 							// outs() << "rem cler\n";
-							globalsadd.clear();
+							// globalsadd.clear();
 							// outs() << "add clr\n";
 							// outs() << f->getName() << "\n";
 						}
@@ -332,7 +334,7 @@ void Safety::computeSafety(Function &F) {
 		}
 
 		out_size = block_data.out.size();
-		outs() << "out size "<< out_size << "\n";
+		// outs() << "out size "<< out_size << "\n";
 		pred_iterator PI = pred_begin(&basic_block), PE = pred_end(&basic_block);
 		if (PE != PI) {
 			BlockData &bdata = bblocks.at((*PI)->getName());
@@ -342,7 +344,7 @@ void Safety::computeSafety(Function &F) {
 			++PI;
 
 			for (; PI != PE; ++PI) {
-				outs() << "l 345\n";
+				// outs() << "l 345\n";
 				setptr = &(bblocks.at((*PI)->getName()).out);
 				dataptr = &(block_data.in);
 				for (itrTop = dataptr->begin(), itr = dataptr->end(); itrTop != itr; ++itrTop) {
@@ -360,19 +362,18 @@ void Safety::computeSafety(Function &F) {
 		// outs() << "block size "<< block_data.out.size() << "\n";
 		if (block_data.out.size() != out_size) {
 			for (succ_iterator SI=succ_begin(&basic_block), E=succ_end(&basic_block); SI != E; ++SI) {
-				outs() << "l 363\n";
+				// outs() << "l 363\n";
 				worklist.push_back(dyn_cast<BasicBlock>(*SI));
 			}
 		}
-		outs() << "loop running-->\n";
+		// outs() << "loop running-->\n";
 	} while (!worklist.empty());
 	
 	std::map<Value*, StringRef> argData;
 	Value *prev = NULL;
-
 	std::set<StringRef> &out = bblocks.at(print_block->getName()).out;
 	for (BasicBlock::iterator I = print_block->begin(), E = print_block->end(); I != E; ++I) {
-		outs() << "l 375\n";	
+		// outs() << "l 375\n";	
 		switch (I->getOpcode()) {
 			case Instruction::Load:
 				{
@@ -393,7 +394,7 @@ void Safety::computeSafety(Function &F) {
 					if (f != NULL && fname.equals(f->getName())) {
 						Instruction::op_iterator it=CI->arg_begin(), end=CI->arg_end();
 						for (++it; it != end; ++it) {
-							outs() << "l 396\n";	
+							// outs() << "l 396\n";	
 							StringRef str = argData.at(dyn_cast<Value>(it));
 							if (out.find(str) != out.end()) {
 								outs() << "safe ";
