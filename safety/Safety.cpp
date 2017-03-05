@@ -203,11 +203,73 @@ void Safety::computeSafety(Function &F) {
 	std::deque<BasicBlock*> worklist;
 	BasicBlock *print_block = NULL;
 	std::set<StringRef>::iterator itr, itrTop;
+	Value *prev = NULL;
 
 	for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
 		worklist.push_back(dyn_cast<BasicBlock>(BB));
 		BlockData temp;
 		bblocks.insert(std::pair<StringRef,BlockData>(BB->getName(),temp));
+		std::set<StringRef> &out = bblocks.at(BB->getName()).out;
+		
+		for (pred_iterator PIE = pred_begin(dyn_cast<BasicBlock>(BB)), PEE = pred_end(dyn_cast<BasicBlock>(BB)); PEE != PIE; ++PIE) {
+			std::map<StringRef,BlockData>::iterator itr = bblocks.find((*PIE)->getName());
+			if (itr != bblocks.end()) {
+				out.insert(itr->second.out.begin(), itr->second.out.end());
+			}
+		}		
+
+		for (BasicBlock::iterator BI = BB->begin(), BE = BB->end(); BI != BE; ++BI) {
+			
+			switch (BI->getOpcode()) {
+				case Instruction::Store:
+					{
+						Value *val = dyn_cast<Value>(BI->getOperand(1));
+						Value *fop = dyn_cast<Value>(BI->getOperand(0));
+						if (val->hasName()) {
+							StringRef name = val->getName();
+							itrTop = out.find(name);
+							if (fop->getValueID() == Value::ConstantPointerNullVal) {	//ptr = NULL
+								out.erase(name);
+							} else if (prev != NULL) {	// ptr = ptr2
+								StringRef pName = prev->getName();
+								if (itrTop == out.end() && out.find(pName) != out.end()) {	//not exist earlier
+									out.insert(name);
+								} else if (out.find(pName) == out.end()) {	//if ptr2 not exist
+									out.erase(name);
+								}
+							} else {	// ptr = &x
+								if (itrTop == out.end()) {
+									out.insert(name);
+								}
+							}
+						}
+						prev = NULL;
+						break;
+					}
+				case Instruction::Load:
+					{
+						Value *val = dyn_cast<Value>(BI->getOperand(0));
+						if (val->hasName()) {
+							prev = val;
+						}
+						break;
+					}
+				case Instruction::Call:
+					{
+						CallInst *CI = dyn_cast<CallInst>(BI);
+						Function *f = CI->getCalledFunction();
+						StringRef fname = "printf";
+						if (f != NULL && fname.equals(f->getName())) {
+							print_block = dyn_cast<BasicBlock>(BB);
+						}
+						prev = NULL;
+						break;
+					}
+				default:
+						prev = NULL;
+						break;
+			}
+		}
 	}
 
 	unsigned int out_size = 0;
@@ -218,7 +280,7 @@ void Safety::computeSafety(Function &F) {
 		
 		BlockData &block_data = bblocks.at(basic_block.getName());
 		std::set<StringRef> &gen = block_data.gen;
-		Value *prev = NULL;//, *lastLoad = NULL;
+		// Value *prev = NULL;//, *lastLoad = NULL;
 		// std::map<Value*, StringRef> argVals;
 		out_size = block_data.out.size();
 
@@ -246,7 +308,6 @@ void Safety::computeSafety(Function &F) {
 			switch (I->getOpcode()) {
 				case Instruction::Store:
 					{
-			
 						Value *val = dyn_cast<Value>(I->getOperand(1));
 						Value *fop = dyn_cast<Value>(I->getOperand(0));
 						if (val->hasName()) {
@@ -275,10 +336,6 @@ void Safety::computeSafety(Function &F) {
 						Value *val = dyn_cast<Value>(I->getOperand(0));
 						if (val->hasName()) {
 							prev = val;
-							// lastLoad = dyn_cast<Value>(I);
-							// argVals.insert(std::pair<Value*, StringRef>(dyn_cast<Value>(I),val->getName()));
-						// } else if (val == lastLoad) {
-							// argVals.insert(std::pair<Value*, StringRef>(dyn_cast<Value>(I),argVals.at(lastLoad)));
 						}
 						break;
 					}
@@ -286,10 +343,7 @@ void Safety::computeSafety(Function &F) {
 					{
 						CallInst *CI = dyn_cast<CallInst>(I);
 						Function *f = CI->getCalledFunction();
-						StringRef fname = "printf";
-						if (f != NULL && fname.equals(f->getName())) {
-							print_block = &basic_block;
-						} else if (!f->isDeclaration()) {
+						if (!f->isDeclaration()) {
 							std::set<std::string> locals;
 							std::set<std::string> globalsadd;
 							std::set<std::string> globalsrem;
@@ -332,39 +386,16 @@ void Safety::computeSafety(Function &F) {
 								gen.erase(str);
 							}
 						}
-							
-						// argVals.clear();
-						// lastLoad = NULL;
 						prev = NULL;
 
 						break;
 					}
 				default:
-						// lastLoad = NULL;
 						prev = NULL;
 						break;
 			}
 		}
 
-		// pred_iterator PI = pred_begin(&basic_block), PE = pred_end(&basic_block);
-		// if (PE != PI) {
-		// 	BlockData &bdata = bblocks.at((*PI)->getName());
-		// 	setptr = &(bdata.out);
-		// 	block_data.in.clear();
-		// 	block_data.in.insert(setptr->begin(), setptr->end());
-		// 	++PI;
-		// 	for (; PI != PE; ++PI) {
-		// 		setptr = &(bblocks.at((*PI)->getName()).out);
-		// 		dataptr = &(block_data.in);
-		// 		for (itrTop = dataptr->begin(), itr = dataptr->end(); itrTop != itr; ++itrTop) {
-		// 			if (setptr->find(*itrTop) == setptr->end()) {
-		// 				dataptr->erase(*itrTop);
-		// 			}
-		// 		}
-		// 	}
-		// }
-
-		// block_data.out.insert(block_data.in.begin(),block_data.in.end());
 		block_data.out.insert(block_data.gen.begin(), block_data.gen.end());
 		
 		// outs() << "Basic Block-----" << basic_block.getName() << "\n";
@@ -381,7 +412,7 @@ void Safety::computeSafety(Function &F) {
 	} while (!worklist.empty());
 	
 	std::map<Value*, StringRef> argData;
-	Value *prev = NULL, *lastLoad = NULL;
+	Value *lastLoad = NULL;
 	std::set<StringRef> &gen = bblocks.at(print_block->getName()).in;
 	// outs() << "gen\n";
 	// printSet(gen);
@@ -450,6 +481,8 @@ void Safety::computeSafety(Function &F) {
 								outs() << "unsafe ";
 							}
 						}
+						outs()<< "\n";
+						return;
 					}  else if (!f->isDeclaration()) {
 						std::set<std::string> locals;
 						std::set<std::string> globalsadd;
@@ -504,7 +537,6 @@ void Safety::computeSafety(Function &F) {
 					break;
 		}
 	}
-	outs()<< "\n";
 }
 
 
