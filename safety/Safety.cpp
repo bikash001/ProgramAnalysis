@@ -32,6 +32,7 @@ class Safety : public ModulePass {
 		void computeSafety(Function &F);
 	private:
 		void computeFunction(std::set<std::string> &, std::set<std::string> &, std::set<std::string> &, Function &);
+		void printSet(std::set<StringRef>&);
 };
 
 bool Safety::runOnModule(Module &M) {
@@ -44,6 +45,13 @@ bool Safety::runOnModule(Module &M) {
 		}
 	}
 	return false;
+}
+
+void Safety::printSet(std::set<StringRef> &set){
+	for (std::set<StringRef>::iterator bg=set.begin(), en=set.end(); bg != en; ++bg) {
+		outs() << *bg <<", ";
+	}
+	outs() << "\n";
 }
 
 void Safety::computeFunction(std::set<std::string> &locals, std::set<std::string> &globalsadd, std::set<std::string> &globalsrem, Function &F) {
@@ -209,6 +217,24 @@ void Safety::computeSafety(Function &F) {
 		std::map<Value*, StringRef> argVals;
 		out_size = block_data.out.size();
 
+		pred_iterator PI = pred_begin(&basic_block), PE = pred_end(&basic_block);
+		if (PE != PI) {
+			BlockData &bdata = bblocks.at((*PI)->getName());
+			setptr = &(bdata.out);
+			block_data.gen.clear();
+			block_data.gen.insert(setptr->begin(), setptr->end());
+			++PI;
+			for (; PI != PE; ++PI) {
+				setptr = &(bblocks.at((*PI)->getName()).out);
+				dataptr = &(block_data.gen);
+				for (itrTop = dataptr->begin(), itr = dataptr->end(); itrTop != itr; ++itrTop) {
+					if (setptr->find(*itrTop) == setptr->end()) {
+						dataptr->erase(*itrTop);
+					}
+				}
+			}
+		}
+
 		for (BasicBlock::iterator I = basic_block.begin(), E = basic_block.end(); I != E; ++I) {
 			
 			switch (I->getOpcode()) {
@@ -314,33 +340,38 @@ void Safety::computeSafety(Function &F) {
 			}
 		}
 
-		pred_iterator PI = pred_begin(&basic_block), PE = pred_end(&basic_block);
-		if (PE != PI) {
-			BlockData &bdata = bblocks.at((*PI)->getName());
-			setptr = &(bdata.out);
-			block_data.in.clear();
-			block_data.in.insert(setptr->begin(), setptr->end());
-			++PI;
+		// pred_iterator PI = pred_begin(&basic_block), PE = pred_end(&basic_block);
+		// if (PE != PI) {
+		// 	BlockData &bdata = bblocks.at((*PI)->getName());
+		// 	setptr = &(bdata.out);
+		// 	block_data.in.clear();
+		// 	block_data.in.insert(setptr->begin(), setptr->end());
+		// 	++PI;
+		// 	for (; PI != PE; ++PI) {
+		// 		setptr = &(bblocks.at((*PI)->getName()).out);
+		// 		dataptr = &(block_data.in);
+		// 		for (itrTop = dataptr->begin(), itr = dataptr->end(); itrTop != itr; ++itrTop) {
+		// 			if (setptr->find(*itrTop) == setptr->end()) {
+		// 				dataptr->erase(*itrTop);
+		// 			}
+		// 		}
+		// 	}
+		// }
 
-			for (; PI != PE; ++PI) {
-				setptr = &(bblocks.at((*PI)->getName()).out);
-				dataptr = &(block_data.in);
-				for (itrTop = dataptr->begin(), itr = dataptr->end(); itrTop != itr; ++itrTop) {
-					if (setptr->find(*itrTop) == setptr->end()) {
-						dataptr->erase(*itrTop);
-					}
-				}
-			}
-		}
-
-		block_data.out.insert(block_data.in.begin(),block_data.in.end());
+		// block_data.out.insert(block_data.in.begin(),block_data.in.end());
 		block_data.out.insert(block_data.gen.begin(), block_data.gen.end());
 		
+		// outs() << "Basic Block-----" << basic_block.getName() << "\n";
+		// printSet(block_data.gen);
+		// printSet(block_data.out);
+		// outs() << "\n";
+
 		if (block_data.out.size() != out_size) {
 			for (succ_iterator SI=succ_begin(&basic_block), E=succ_end(&basic_block); SI != E; ++SI) {
 				worklist.push_back(dyn_cast<BasicBlock>(*SI));
 			}
 		}
+		// outs() << "itr-->\n";
 	} while (!worklist.empty());
 	
 	std::map<Value*, StringRef> argData;
