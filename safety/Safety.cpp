@@ -33,6 +33,7 @@ class Safety : public ModulePass {
 	private:
 		void computeFunction(std::set<std::string> &, std::set<std::string> &, std::set<std::string> &, Function &);
 		void printSet(std::set<StringRef>&);
+		void debug(std::string str);
 };
 
 bool Safety::runOnModule(Module &M) {
@@ -45,6 +46,10 @@ bool Safety::runOnModule(Module &M) {
 		}
 	}
 	return false;
+}
+
+void Safety::debug(std::string str) {
+	outs() << str << "\n";
 }
 
 void Safety::printSet(std::set<StringRef> &set){
@@ -234,6 +239,7 @@ void Safety::computeSafety(Function &F) {
 				}
 			}
 		}
+		block_data.in.insert(block_data.gen.begin(), block_data.gen.end());
 
 		for (BasicBlock::iterator I = basic_block.begin(), E = basic_block.end(); I != E; ++I) {
 			
@@ -375,23 +381,60 @@ void Safety::computeSafety(Function &F) {
 	} while (!worklist.empty());
 	
 	std::map<Value*, StringRef> argData;
-	Value *prev = NULL;
-	std::set<StringRef> &out = bblocks.at(print_block->getName()).out;
+	Value *prev = NULL, *lastLoad = NULL;
+	std::set<StringRef> &gen = bblocks.at(print_block->getName()).in;
+	// outs() << "gen\n";
+	// printSet(gen);
+
 	for (BasicBlock::iterator I = print_block->begin(), E = print_block->end(); I != E; ++I) {
 		switch (I->getOpcode()) {
+			case Instruction::Store:
+				{
+					// debug("store");
+					Value *val = dyn_cast<Value>(I->getOperand(1));
+					Value *fop = dyn_cast<Value>(I->getOperand(0));
+					if (val->hasName()) {
+						StringRef name = val->getName();
+						itrTop = gen.find(name);
+						if (fop->getValueID() == Value::ConstantPointerNullVal) {	//ptr = NULL
+							// debug("null");
+							gen.erase(name);
+						} else if (prev != NULL) {	// ptr = ptr2
+							StringRef pName = prev->getName();
+							// outs() << pName << "\n";
+							if (itrTop == gen.end() && gen.find(pName) != gen.end()) {	//not exist earlier
+								// debug("1");
+								gen.insert(name);
+							} else if (gen.find(pName) == gen.end()) {	//if ptr2 not exist
+								// debug("2");
+								gen.erase(name);
+							}
+						} else {	// ptr = &x
+							if (itrTop == gen.end()) {		//if ptr not present in gen, then null ptr
+								// debug("3");
+								gen.insert(name);
+							}
+						}
+					}
+					prev = NULL;
+					break;
+				}
 			case Instruction::Load:
 				{
 					Value *val = dyn_cast<Value>(I->getOperand(0));
 					if (val->hasName()) {
-						prev = dyn_cast<Value>(I);
+						// debug("4");
+						lastLoad = dyn_cast<Value>(I);
+						prev = val;
 						argData.insert(std::pair<Value*, StringRef>(dyn_cast<Value>(I),val->getName()));
-					} else if (val == prev) {
-						argData.insert(std::pair<Value*, StringRef>(dyn_cast<Value>(I),argData.at(prev)));
+					} else if (val == lastLoad) {
+						argData.insert(std::pair<Value*, StringRef>(dyn_cast<Value>(I),argData.at(lastLoad)));
 					}
 					break;
 				}
 			case Instruction::Call:
 				{
+					// debug("call");
 					CallInst *CI = dyn_cast<CallInst>(I);
 					Function *f = CI->getCalledFunction();
 					StringRef fname = "printf";
@@ -399,16 +442,20 @@ void Safety::computeSafety(Function &F) {
 						Instruction::op_iterator it=CI->arg_begin(), end=CI->arg_end();
 						for (++it; it != end; ++it) {
 							StringRef str = argData.at(dyn_cast<Value>(it));
-							if (out.find(str) != out.end()) {
+							if (gen.find(str) != gen.end()) {
 								outs() << "safe ";
 							} else {
 								outs() << "unsafe ";
 							}
 						}
 					}
+					lastLoad = NULL;
+					prev = NULL;
 					break;
 				}
 			default:
+					prev = NULL;
+					lastLoad = NULL;
 					break;
 		}
 	}
